@@ -400,6 +400,6 @@ names( pols_df_jel_dummy_5yroll_full)[names( pols_df_jel_dummy_5yroll_full) == "
 names( pols_df_jel_dummy_5yroll_full)[names( pols_df_jel_dummy_5yroll_full) == "gender_fn_95_male"] <- "male"
 
 write.csv( pols_df_jel_dummy_5yroll_full,
-          './data/per_author_net_stats_5yroll_full.csv')
+          './data/per_author_net_stats_5yroll_full.csv') 
 ```
 
