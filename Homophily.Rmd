@@ -1,0 +1,606 @@
+---
+title: "Homophily"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE}
+library('fastDummies') 
+library('igraph')
+library('network')
+library('sna')
+library('ergm')
+library('statnet')
+library('intergraph')
+library('dplyr')
+library('igraph')
+library('ggplot2')
+library('xtable')
+```
+
+```{r Read_in_data}
+edges_df <- read.csv('./data/econlit_edges_simple.csv')
+edges_df <- subset(edges_df, select = -c(X))
+
+nodes_df <- read.csv('./data/econlit_nodes.csv')
+nodes_df = rename(nodes_df, gender = gender_fn_95)
+```
+
+```{r Preprocess: Add genders to edges_df}
+# assign authors to numeric ids to be appropriate for igraph input
+nodes_df['node_id'] = seq(1:nrow(nodes_df))
+map_node_id = setNames(c(nodes_df$node_id), c(nodes_df$author))
+edges_df['author_1_id'] <- map_node_id[edges_df$author.1]
+edges_df['author_2_id'] <- map_node_id[edges_df$author.2]
+
+# map genders from node_df to edges_coauth for each author (including NAs)
+nodes_df$gender[nodes_df$gender == ""] <- NA
+map_gender = setNames(c(nodes_df$gender), c(nodes_df$author))
+edges_df['author_1_gender'] <- map_gender[edges_df$author.1]
+edges_df['author_2_gender'] <- map_gender[edges_df$author.2]
+
+# recode gender as dummies, numerical vars in nodes_df
+nodes_df <- dummy_columns(nodes_df,
+                          select_columns = "gender",
+                          ignore_na = FALSE)
+# make NAs into zeros for correct sum later
+nodes_df[is.na(nodes_df$gender_female), 'gender_female'] <-  0
+nodes_df[is.na(nodes_df$gender_male), 'gender_male'] <-  0
+nodes_df[is.na(nodes_df$gender_NA), 'gender_NA'] <-  0
+
+# remove single-authored "egdes" from edge_list, collaborator gender is not applicable in those cases, 
+# keep only true edges
+edges_coauth <- subset(edges_df, author.2 != '')
+```
+
+```{r Gender identified check}
+cat(round(1-mean(is.na(nodes_df$gender)), 3) * 100, '% of authors could be genderdized.')
+# most of the non-disambiguation is due to missing first names
+```
+
+```{r MAIN: Homophily for whole sample across all periods - NAs omitted}
+# remove edges where gender is NA for at least one of the authors
+edges_coauth_no_nas <- filter(edges_coauth, !(is.na(author_1_gender) | is.na(author_2_gender)))
+
+# copy edges_coauths df with author columns and id columns swapped
+edges_coauth_reversed_author_order <- edges_coauth_no_nas[, c('author.2', 'author.1', 'collab_start_year', 
+                                                       'pub_year', 'author_2_id', "author_1_id", 
+                                                       'author_2_gender', 'author_1_gender')]
+# swap author column names for correct merging
+edges_coauth_reversed_author_order <- edges_coauth_reversed_author_order %>% 
+  rename(author.1 = author.2,
+         author.2 = author.1,
+         author_1_id = author_2_id,
+         author_2_id = author_1_id,
+         author_1_gender = author_2_gender,
+         author_2_gender = author_1_gender)
+
+edges_coauths_bidirectional <- rbind(edges_coauth_no_nas, edges_coauth_reversed_author_order)
+
+# add dummy gender columns  # only really need for 2nd author
+edges_coauths_bidirectional <- dummy_columns(edges_coauths_bidirectional,
+                          select_columns =  c('author_1_gender', 'author_2_gender'),
+                          ignore_na = FALSE)
+
+# replace NAs with 0s in dummy columns
+dummy_column_names =  c("author_1_gender_female",
+                        "author_1_gender_male",
+                        "author_2_gender_female",
+                        "author_2_gender_male")
+
+for (column_name in dummy_column_names){
+  edges_coauths_bidirectional[is.na(edges_coauths_bidirectional[, column_name]), column_name] <-  0
+}
+
+# group by "tail" author
+collab_shares_dplyr <- edges_coauths_bidirectional[, c('author.1',
+                                                       'author_1_id',
+                                                       "author_2_gender_female",
+                                                       "author_2_gender_male")] %>%
+  group_by(author.1, author_1_id) %>% 
+  summarise_each(funs(mean))
+
+# get female, male, and NA author ids collected 
+ids_female <- unique(nodes_df$node_id[nodes_df$gender=='female'])
+ids_male <- unique(nodes_df$node_id[nodes_df$gender=='male'])
+
+# subset collab_shares_dplyr based on ids into 3 groups
+neighbors_df_female_auths <- collab_shares_dplyr[collab_shares_dplyr$author_1_id %in% ids_female, ]
+neighbors_df_male_auths <- collab_shares_dplyr[collab_shares_dplyr$author_1_id %in% ids_male, ] 
+
+# average for each group
+avg_coauthor_shares_female_auths <- colMeans(neighbors_df_female_auths[, c("author_2_gender_female",
+                                                                           "author_2_gender_male")])
+avg_coauthor_shares_male_auths <- colMeans(neighbors_df_male_auths[, c("author_2_gender_female",
+                                                                       "author_2_gender_male")])
+
+avg_collaborator_gender_distribution_df = data.frame(matrix(ncol = 2, nrow = 2))
+avg_collaborator_gender_distribution_df[1, ] = t(avg_coauthor_shares_female_auths)*100
+avg_collaborator_gender_distribution_df[2, ] = t(avg_coauthor_shares_male_auths)*100
+colnames(avg_collaborator_gender_distribution_df) <- c('average share of female collaborators',
+                                                       'average share of male collaborators')
+rownames(avg_collaborator_gender_distribution_df) <- c('female authors', 
+                                                       'male authors')
+
+avg_collaborator_gender_distribution_df
+
+
+# Calculate relative homophily
+# Fraction of male, female, and NA gender authors in the sample
+
+# remove observations from node df that are NA gendered
+node_df_no_nas <- filter(nodes_df, !is.na(gender)) %>% 
+  select(-c('gender_NA'))
+
+# get all authors present in the sample by gender (those who do not coauthor included)
+frac_male = sum(node_df_no_nas$gender=='male', na.rm = TRUE) / nrow(node_df_no_nas) *100
+frac_female = sum(node_df_no_nas$gender=='female', na.rm = TRUE) / nrow(node_df_no_nas) *100
+cat('Fraction of men:', frac_male)
+cat('Fraction of women:', frac_female)
+
+# cross-check that 100% of rows have been covered # OK
+nrow(node_df_no_nas) ==
+  sum(node_df_no_nas$gender=='male', na.rm = TRUE) +
+  sum(node_df_no_nas$gender=='female', na.rm = TRUE) 
+
+# create a table with population shares
+population_collaborator_gender_distribution_df = data.frame(matrix(ncol = 2, nrow = 1))
+population_collaborator_gender_distribution_df[1,1] = frac_female
+population_collaborator_gender_distribution_df[1,2] = frac_male
+colnames(population_collaborator_gender_distribution_df) <- c('population share of female authors',
+                                                       'population share of male authors')
+rownames(population_collaborator_gender_distribution_df) <- 'population'
+population_collaborator_gender_distribution_df
+
+# difference from population shares
+collab_share_diff_df = avg_collaborator_gender_distribution_df
+collab_share_diff_df[1, ] = collab_share_diff_df[1, ] - population_collaborator_gender_distribution_df[1, ]
+collab_share_diff_df[2, ] = collab_share_diff_df[2, ] - population_collaborator_gender_distribution_df[1, ]
+colnames(collab_share_diff_df) <- c('avg share of female coauthors - population share of female authors',
+                                    'avg share of male coauthors - population share of male authors')
+
+print(population_collaborator_gender_distribution_df)
+print(avg_collaborator_gender_distribution_df)
+print(collab_share_diff_df)
+
+# save tables
+write.csv(avg_collaborator_gender_distribution_df,
+          './result_tables/homophily_coauthor_gender_distr_no_nas.csv')
+write.csv(population_collaborator_gender_distribution_df, 
+          './result_tables/homophily_population_gender_distr_no_nas.csv')
+write.csv(collab_share_diff_df,
+          './result_tables/homophily_difference_no_nas.csv')
+```
+
+```{r Appendix. Homophily for whole sample across all periods - NAs included}
+
+# Repeat analysis with NA-gendered authors included
+
+# copy edges_coauths df with author columns and id columns swapped
+edges_coauth_reversed_author_order <- edges_coauth[, c('author.2', 'author.1', 'collab_start_year', 
+                                                       'pub_year', 'author_2_id', "author_1_id", 
+                                                       'author_2_gender', 'author_1_gender')]
+# swap author column names for correct merging
+edges_coauth_reversed_author_order <- edges_coauth_reversed_author_order %>% 
+  rename(author.1 = author.2,
+         author.2 = author.1,
+         author_1_id = author_2_id,
+         author_2_id = author_1_id,
+         author_1_gender = author_2_gender,
+         author_2_gender = author_1_gender)
+
+edges_coauths_bidirectional <- rbind(edges_coauth, edges_coauth_reversed_author_order)
+
+# add dummy gender columns  # only really need for 2nd author
+edges_coauths_bidirectional <- dummy_columns(edges_coauths_bidirectional,
+                          select_columns =  c('author_1_gender', 'author_2_gender'),
+                          ignore_na = FALSE)
+
+# replace NAs with 0s in dummy columns
+dummy_column_names =  c("author_1_gender_female",
+                        "author_1_gender_male",
+                        "author_1_gender_NA",
+                        "author_2_gender_female",
+                        "author_2_gender_male",
+                        "author_2_gender_NA")
+
+for (column_name in dummy_column_names){
+  edges_coauths_bidirectional[is.na(edges_coauths_bidirectional[, column_name]), column_name] <-  0
+}
+
+# group by "tail" author
+collab_shares_dplyr <- edges_coauths_bidirectional[, c('author.1',
+                                                       'author_1_id',
+                                                       "author_2_gender_female",
+                                                       "author_2_gender_male",
+                                                       "author_2_gender_NA")] %>%
+  group_by(author.1, author_1_id) %>% 
+  summarise_each(funs(mean))
+
+# get female, male, and NA author ids collected 
+ids_female <- unique(nodes_df$node_id[nodes_df$gender=='female'])
+ids_male <- unique(nodes_df$node_id[nodes_df$gender=='male'])
+ids_NA <- unique(nodes_df$node_id[is.na(nodes_df$gender)])
+
+# subset collab_shares_dplyr based on ids into 3 groups
+neighbors_df_female_auths <- collab_shares_dplyr[collab_shares_dplyr$author_1_id %in% ids_female, ]
+neighbors_df_male_auths <- collab_shares_dplyr[collab_shares_dplyr$author_1_id %in% ids_male, ] 
+neighbors_df_NA_auths <- collab_shares_dplyr[collab_shares_dplyr$author_1_id %in% ids_NA, ] 
+
+# average for each group
+avg_coauthor_shares_female_auths <- colMeans(neighbors_df_female_auths[, c("author_2_gender_female",
+                                                                           "author_2_gender_male",
+                                                                           "author_2_gender_NA" )])
+avg_coauthor_shares_male_auths <- colMeans(neighbors_df_male_auths[, c("author_2_gender_female",
+                                                                       "author_2_gender_male",
+                                                                       "author_2_gender_NA" )])
+avg_coauthor_shares_NA_auths <- colMeans(neighbors_df_NA_auths[, c("author_2_gender_female",
+                                                                   "author_2_gender_male",
+                                                                   "author_2_gender_NA" )])
+avg_collaborator_gender_distribution_df = data.frame(matrix(ncol = 3, nrow = 3))
+avg_collaborator_gender_distribution_df[1, ] = t(avg_coauthor_shares_female_auths)*100
+avg_collaborator_gender_distribution_df[2, ] = t(avg_coauthor_shares_male_auths)*100
+avg_collaborator_gender_distribution_df[3, ] = t(avg_coauthor_shares_NA_auths)*100
+colnames(avg_collaborator_gender_distribution_df) <- c('average share of female collaborators',
+                                                       'average share of male collaborators', 
+                                                       'average share of NA collaborators (gender not classified)')
+rownames(avg_collaborator_gender_distribution_df) <- c('female authors', 
+                                                       'male authors',
+                                                       'NA authors')
+
+avg_collaborator_gender_distribution_df
+
+
+# Calculate relative homophily
+# Fraction of male, female, and NA gender authors in the sample
+
+# get all authors present in the sample by gender (those who do not coauthor too)
+frac_male = sum(nodes_df$gender=='male', na.rm = TRUE) / nrow(nodes_df) *100
+frac_female = sum(nodes_df$gender=='female', na.rm = TRUE) / nrow(nodes_df) *100
+frac_na = sum(is.na(nodes_df$gender)) / nrow(nodes_df) *100
+cat('Fraction of men:', frac_male)
+cat('Fraction of women:', frac_female)
+cat('Fraction of gender not classified (NA):', frac_na)
+
+# cross-check that 100% of rows have been covered # OK
+nrow(nodes_df) ==
+  sum(nodes_df$gender=='male', na.rm = TRUE) +
+  sum(nodes_df$gender=='female', na.rm = TRUE) +
+  sum(is.na(nodes_df$gender)) 
+
+# create a table with population shares
+population_collaborator_gender_distribution_df = data.frame(matrix(ncol = 3, nrow = 1))
+population_collaborator_gender_distribution_df[1,1] = frac_female
+population_collaborator_gender_distribution_df[1,2] = frac_male
+population_collaborator_gender_distribution_df[1,3] = frac_na
+colnames(population_collaborator_gender_distribution_df) <- c('population share of female authors',
+                                                       'population share of male authors', 
+                                                       'population share of NA authors (gender not classified)')
+rownames(population_collaborator_gender_distribution_df) <- 'population'
+
+# difference from population shares
+collab_share_diff_df = avg_collaborator_gender_distribution_df 
+collab_share_diff_df[1, ] = collab_share_diff_df[1, ] - population_collaborator_gender_distribution_df[1, ]
+collab_share_diff_df[2, ] = collab_share_diff_df[2, ] - population_collaborator_gender_distribution_df[1, ]
+collab_share_diff_df[3, ] = collab_share_diff_df[3, ] - population_collaborator_gender_distribution_df[1, ]
+colnames(collab_share_diff_df) <- c('avg share of female coauthors - population share of female authors', 
+                                    'avg share of male coauthors - population share of male authors', 
+                                    'avg share of NA coauthors - population share of NA authors')
+
+print(population_collaborator_gender_distribution_df)
+print(avg_collaborator_gender_distribution_df)
+print(collab_share_diff_df)
+
+# save tables
+write.csv(avg_collaborator_gender_distribution_df,
+          './result_tables/homophily_coauthor_gender_distr.csv')
+write.csv(population_collaborator_gender_distribution_df, 
+          './result_tables/homophily_population_gender_distr.csv')
+write.csv(collab_share_diff_df,
+          './result_tables/homophily_difference.csv')
+```
+
+```{r Tables to Latex}
+
+avg_collaborator_gender_distribution_df <- read.csv('./result_tables/homophily_coauthor_gender_distr_no_nas.csv')
+population_collaborator_gender_distribution_df <- read.csv(
+  './result_tables/homophily_population_gender_distr_no_nas.csv')
+collab_share_diff_df <- read.csv(
+  './result_tables/homophily_difference_no_nas.csv')
+
+# Get code, copy to LaTeX and edit tables there
+print(xtable(avg_collaborator_gender_distribution_df, type = "latex"))
+print(xtable(population_collaborator_gender_distribution_df, type = "latex"))
+print(xtable(collab_share_diff_df, type = "latex"))
+```
+
+```{r Inbreeding homophily over time}
+
+edges_coauth[is.na(edges_coauth)] <- 'unknown'
+
+# copy edges_coauths df with author columns and id columns swapped
+edges_coauth_reversed_author_order <- edges_coauth[, c('author.2', 'author.1', 'collab_start_year', 
+                                                       'pub_year', 'author_2_id', "author_1_id", 
+                                                       'author_2_gender', 'author_1_gender')]
+# swap author column names for correct merging
+edges_coauth_reversed_author_order <- edges_coauth_reversed_author_order %>% 
+  rename(author.1 = author.2,
+         author.2 = author.1,
+         author_1_id = author_2_id,
+         author_2_id = author_1_id,
+         author_1_gender = author_2_gender,
+         author_2_gender = author_1_gender)
+
+edges_coauths_bidirectional <- rbind(edges_coauth, edges_coauth_reversed_author_order)
+
+# add dummy gender columns  # only really need for 2nd author
+edges_coauths_bidirectional <- dummy_columns(edges_coauths_bidirectional,
+                          select_columns =  c('author_1_gender', 'author_2_gender'),
+                          ignore_na = FALSE)
+
+# replace NAs with 0s in dummy columns
+dummy_column_names =  c("author_1_gender_female",
+                        "author_1_gender_male",
+                        "author_1_gender_unknown",
+                        "author_2_gender_female",
+                        "author_2_gender_male",
+                        "author_2_gender_unknown")
+
+for (column_name in dummy_column_names){
+  edges_coauths_bidirectional[is.na(edges_coauths_bidirectional[, column_name]), column_name] <-  0
+}
+
+# create data frame with all years
+ih_df <- data.frame(matrix(ncol = 3, nrow = 0))
+colnames(ih_df) <- c('year', 'ih_female', 'ih_male')
+
+years = sort(unique(edges_df$pub_year))
+year_i = 1970
+for (year_i in years){
+  
+  edges_coauths_bidirectional_year_i <- edges_coauths_bidirectional[edges_coauths_bidirectional$pub_year == year_i, ]
+  
+  # group by "tail" author
+  collab_shares_dplyr <- edges_coauths_bidirectional_year_i[, c('author.1',
+                                                                'author_1_id',
+                                                                "author_2_gender_female",
+                                                                "author_2_gender_male",
+                                                                "author_2_gender_unknown")] %>%
+    group_by(author.1, author_1_id) %>% 
+    summarise_each(funs(mean))
+
+  # get active nodes with their genders into df
+  nodes_year_i <- distinct(edges_coauths_bidirectional_year_i, author.1, .keep_all = TRUE)[, c('author.1', 
+                                                                                               'author_1_id',
+                                                                                               'author_1_gender')]
+  # get female, male, and NA author ids collected for this year
+  ids_female <- nodes_year_i[nodes_year_i$author_1_gender =="female", 'author_1_id']
+  ids_male <- nodes_year_i[nodes_year_i$author_1_gender =="male", 'author_1_id']
+  ids_NA <- nodes_year_i[nodes_year_i$author_1_gender =="unknown", 'author_1_id']
+  
+    # subset collab_shares_dplyr based on ids into 3 groups
+  neighbors_df_female_auths <- collab_shares_dplyr[collab_shares_dplyr$author_1_id %in% ids_female, ]
+  neighbors_df_male_auths <- collab_shares_dplyr[collab_shares_dplyr$author_1_id %in% ids_male, ] 
+  neighbors_df_NA_auths <- collab_shares_dplyr[collab_shares_dplyr$author_1_id %in% ids_NA, ] 
+
+  # average for each group
+  avg_coauthor_shares_female_auths <- colMeans(neighbors_df_female_auths[, c("author_2_gender_female",
+                                                                             "author_2_gender_male",
+                                                                             "author_2_gender_unknown" )])
+  avg_coauthor_shares_male_auths <- colMeans(neighbors_df_male_auths[, c("author_2_gender_female",
+                                                                         "author_2_gender_male",
+                                                                         "author_2_gender_unknown" )])
+  avg_coauthor_shares_NA_auths <- colMeans(neighbors_df_NA_auths[, c("author_2_gender_female",
+                                                                     "author_2_gender_male",
+                                                                     "author_2_gender_unknown" )])
+  avg_collaborator_gender_distribution_df = data.frame(matrix(ncol = 3, nrow = 3))
+  avg_collaborator_gender_distribution_df[1, ] = t(avg_coauthor_shares_female_auths)*100
+  avg_collaborator_gender_distribution_df[2, ] = t(avg_coauthor_shares_male_auths)*100
+  avg_collaborator_gender_distribution_df[3, ] = t(avg_coauthor_shares_NA_auths)*100
+  colnames(avg_collaborator_gender_distribution_df) <- c('average share of female collaborators',
+                                                         'average share of male collaborators', 
+                                                         'average share of NA collaborators (gender not classified)')
+  rownames(avg_collaborator_gender_distribution_df) <- c('female authors', 
+                                                         'male authors',
+                                                         'NA authors')
+
+  avg_collaborator_gender_distribution_df
+  
+  # assign same_link_share_female and same_link_share_male
+  same_link_share_female <- avg_coauthor_shares_female_auths['author_2_gender_female']
+  same_link_share_male <- avg_coauthor_shares_male_auths['author_2_gender_male']
+
+  # get gender distribution for this year
+  share_female <- length(ids_female) / nrow(nodes_year_i)
+  share_male <- length(ids_male) / nrow(nodes_year_i)
+  share_NA <- length(ids_NA) / nrow(nodes_year_i)
+  
+  # Calculate IH for males and females
+  ih_female = (same_link_share_female - share_female) / (1 - share_female)
+  ih_male = (same_link_share_male - share_male) / (1 - share_male)
+  
+  # save to df
+  ih_df[nrow(ih_df)+1, ] <- list(year_i, ih_female, ih_male)
+  print(year_i)
+
+}
+
+# save the results of IH calculation
+write.csv(ih_df,
+          './data/inbreeding_homophily_res.csv')
+```
+
+```{r Plot inbreeding homophily}
+
+ih_df <- read.csv('./data/inbreeding_homophily_res.csv')
+
+# Plot for inbreeding homophily
+plot(ih_df$ih_female)
+plot(ih_df$ih_male)
+
+colors <- c("Female" = "darkred", "Male" = "darkblue")
+ih_plot <- ggplot(data = ih_df, mapping = aes(x = year)) +
+  geom_line(aes(y = ih_df$ih_female, col = 'Female'), size = 0.3, linetype = "dashed") +
+  geom_point(aes(y = ih_df$ih_female, col = 'Female')) +
+  geom_line(aes(y = ih_df$ih_male, col = 'Male'), size = 0.3, linetype = "dotted") +
+  geom_point(aes(y = ih_df$ih_male, col = 'Male')) +
+  geom_hline(yintercept = 0, col = "black") +
+  ylim(c(-0.02, 0.55)) + 
+  xlim(c(1965, 2025)) +
+  labs(#title = 'Inbreeding Homophily',
+       x = 'Year', 
+       y = 'Inbreeding homophily index',
+       color = 'Legend') +
+  scale_color_manual(values = colors) +
+  scale_x_continuous(breaks = seq(1970, 2020, by = 5),
+                     expand = c(0.03, 0.03)) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'bottom',
+        legend.direction = "horizontal",
+        legend.title=element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5),
+        plot.caption = element_text(hjust = 0))
+
+ih_plot
+
+ggsave("./plots/inbreeding_homophily.png",
+       ih_plot, 
+       width = 6, height = 4)
+
+```
+
+```{r Assortativity coefficient over time}
+network_stat_df <- read.csv('./data/network_stats_yearly.csv') 
+
+# Assortativity plot
+assort_plot <- ggplot(data = network_stat_df, mapping = aes(x = year)) +
+  geom_point(y = network_stat_df$assortativity_of_netw, col = 'orange') +
+  geom_line(y = network_stat_df$assortativity_of_netw, col = 'orange', size = 0.3, linetype = "dashed") +
+  geom_hline(yintercept = 0, col = "black") +
+  ylim(c(0, 0.5)) + 
+  xlim(c(1965, 2025)) +
+  labs(#title = 'Assortativity',
+       x = 'Year', 
+       y = 'Assortativity coefficient') +
+  scale_x_continuous(breaks = seq(1970, 2020, by = 5),
+                     expand = c(0.03, 0.03)) +
+  theme_bw() +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5),
+        plot.caption = element_text(hjust = 0))
+
+assort_plot
+
+ggsave("./plots/assortativity.png",
+       assort_plot,
+       width = 6, height = 4)
+
+```
+
+Solo authorship and leaky pipeline analysis:
+
+```{r Solo authorship}
+
+# 1.) Do women author more alone? 
+# 2.) Are women more likely to only publish a single paper in the sample period?
+
+# 1.) Number of sole authored papers by gender
+sole_auth_papers <- edges_df[edges_df$author.2 == '', c('author.1', "author_1_id", 'author_1_gender',
+                                                        "collab_start_year", "pub_year")]
+# Make gender into factor (with 3 levels: female, male, NA)
+sole_auth_papers['author_1_gender_fact'] = as.factor(sole_auth_papers$author_1_gender)
+sole_auth_papers$author_1_gender_fact <- addNA(sole_auth_papers$author_1_gender_fact)
+levels(sole_auth_papers$author_1_gender_fact) # female, male, NA order
+
+# Create tables
+# number of sole authored papers (if someone sole authors more than ones that counts all times)
+sole_auths_papers_counts <- table(sole_auth_papers$author_1_gender_fact)
+
+# 1A) sole authored papers by gender / all sole authored papers
+sole_auths_papers_fracs <- prop.table(table(sole_auth_papers$author_1_gender_fact))*100
+
+# 1B) sole authored papers by gender / all papers by gender 
+# i.e. share of sole-authored papers for each gender out of the papers published by that gender
+all_coauthors_genders_coll = as.factor(c(edges_coauth$author_1_gender,
+                                         edges_coauth$author_2_gender))
+num_pub_papers_per_gender = table(all_coauthors_genders_coll)
+
+# how many papers did genders publish / contribute to how many publications overall
+sole_auths_papers_per_gender_fracs = sole_auths_papers_counts / num_pub_papers_per_gender * 100
+
+# Print tables
+print(sole_auths_papers_fracs)
+print(sole_auths_papers_per_gender_fracs)
+
+# Save tables
+write.csv(sole_auths_papers_fracs,
+          './result_tables/solo_papers_across_gender_shares.csv')
+write.csv(sole_auths_papers_per_gender_fracs,
+          './result_tables/solo_papers_within_gender_shares.csv')
+
+# Get LaTeX code for tables
+print(xtable(sole_auths_papers_fracs, type = "latex"))
+print(xtable(sole_auths_papers_per_gender_fracs, type = "latex"))
+```
+
+Males cover 61% of all sole authored papers, women only 13%.
+Out of all publications by women approx 15% is sole authored, while this share is over 23% among men.
+
+
+```{r Leaky Pipeline -- only 1 paper published}
+
+# 2.) Do women leak out of the discipline at a higher rate? 
+
+authors_pubs_df <- read.csv('./data/econlit_author_article_attributes.csv')
+
+n_occur <- data.frame(table(authors_pubs_df$author))
+colnames(n_occur) <- c('author_name', 'freq')
+n_occur_min_2 <- n_occur[n_occur$freq > 1, ]
+n_occur_only_1 <- n_occur[n_occur$freq == 1, ]
+
+cat(nrow(n_occur_min_2) / nrow(n_occur) * 100, '% of authors have at least 2 publications during the 51 years.') 
+cat(nrow(n_occur_only_1) / nrow(n_occur) * 100, '% of authors in the sample have only a single paper.')
+# almost 60% of the sample consists of authors who only publish a single time during the 51 years
+
+# map genders
+n_occur_only_1['author_gender'] <- map_gender[n_occur_only_1$author_name]
+
+# Make gender into factor (with 3 levels: male, female, NA)
+n_occur_only_1['author_gender_fact'] = addNA(as.factor(n_occur_only_1$author_gender))
+levels(n_occur_only_1$author_gender_fact)
+
+# Create tables
+
+# 2A) only 1x appearing authors by gender / all only 1x appearing authors
+n_occur_only_1_fracs <- prop.table(table(n_occur_only_1$author_gender_fact))*100
+
+# 2B) only 1x appearing authors by gender / all authors by gender
+num_authors_per_gender = table(addNA(as.factor(c(nodes_df$gender)))) # OK
+n_occur_only_1_count = table(addNA(as.factor(c(n_occur_only_1$author_gender)))) # OK
+n_occur_only_1_per_gender_fracs = n_occur_only_1_count / num_authors_per_gender * 100
+
+# Present tables
+print(n_occur_only_1_fracs)
+print(n_occur_only_1_per_gender_fracs)
+
+# Save tables
+write.csv(n_occur_only_1_fracs,
+          './result_tables/single_publication_across_gender_shares.csv')
+write.csv(n_occur_only_1_per_gender_fracs,
+          './result_tables/single_publication_within_gender_shares.csv')
+
+# Get LaTeX code for tables
+print(xtable(n_occur_only_1_fracs, type = "latex"))
+print(xtable(n_occur_only_1_per_gender_fracs, type = "latex"))
+```
+
+Of all authors who only publish once, approximately 21% are female and 46% are male.
+From all males and females who appear in the sample, roughly 60% of both genders only published a single time, with virtually no difference in "leakage" shown when raw averages are compared.
+
