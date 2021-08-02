@@ -1,0 +1,85 @@
+---
+title: "Currarini_analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) 
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(stats) 
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(plm)
+library(lmtest)
+library(broom)
+library(stargazer)
+```
+
+
+```{r Network stat plots without controls - comparison of raw averages}
+network_stats_df <- read.csv('./data/network_stats_yearly.csv')
+
+group_share_plot <- ggplot(data = network_stats_df, mapping = aes(x = year)) + 
+  geom_ribbon(data=network_stats_df, 
+              aes(ymin=group_share_f,ymax=group_share_m), fill="bisque1", alpha=0.5) +
+  geom_line(aes(y = group_share_m, col = 'Male'), size = 1.05) +
+  geom_line(aes(y = group_share_f, col = 'Female'), size = 1.05) + 
+  ylim(c(0, 1)) + 
+  xlim(c(1965, 2025)) +
+  labs(x = 'Year', y = 'Population shares',
+       title = 'Population gender composition') +
+  scale_x_continuous(breaks = seq(1970, 2020, by = 5),
+                     expand = c(0, 0)) +
+  scale_color_manual(values = c("Male" = "darkblue", "Female" = "darkred", 'Difference' = 'black')) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'bottom',
+        legend.direction = "horizontal",
+        legend.title=element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank())
+
+group_share_plot
+ggsave('./plots/population_shares.png',
+       group_share_plot,
+       width = 6, height = 4)
+
+num_ties_plot <- ggplot(data = network_stats_df, mapping = aes(x = year)) + 
+  geom_ribbon(data=network_stats_df, 
+              aes(ymin=avg_num_ties_f,ymax=avg_num_ties_m), fill="bisque1", alpha=0.5) +
+  geom_line(aes(y = avg_num_ties_m, col = 'Male'), size = 1.05) +
+  geom_line(aes(y = avg_num_ties_f, col = 'Female'), size = 1.05) + 
+  ylim(c(0.3, 2.6)) + 
+  labs(x = 'Year', y = 'Average number of ties',
+       title = 'Collaborative ties') +
+  scale_x_continuous(breaks = seq(1970, 2020, by = 5),
+                     expand = c(0, 0)) +
+  scale_color_manual(values = c("Male" = "darkblue", "Female" = "darkred", 'Difference' = 'black')) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'bottom',
+        legend.direction = "horizontal",
+        legend.title=element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5))
+
+num_ties_plot
+
+ggsave('./plots/Currarini_tie_diff.png',
+       num_ties_plot,
+       width = 6, height = 4)
+
+```
+
+
+
+
+
+
+
+
+
