@@ -161,7 +161,7 @@ stargazer::stargazer(
   add.lines=list(c('Year FE', 'Yes','Yes', 'Yes'),
                  c('Career length FE', 'Yes','Yes', 'Yes'),
                  c('JEL codes', 'Yes','Yes', 'Yes')),
-  omit.stat=c("rsq", "adj.rsq", "f"),
+  omit.stat=c("rsq", "f"),
   notes = c("Results in columns (1) to (3) are obtained using POLS estimation with the", 
             "respective network measure as the dependent variable.",
             "Standard errors clustered at the author level reported in parentheses."),
