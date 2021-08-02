@@ -14,6 +14,7 @@ library(ndtv)
 library(dplyr)
 library(magrittr)
 library(igraph)
+library(fastDummies)
 ```
 
 ```{r Read_in_data}
