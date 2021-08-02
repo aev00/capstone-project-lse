@@ -1,0 +1,324 @@
+---
+title: "POLS_analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+library(stats)
+library(dplyr)
+library(magrittr)
+library(ggplot2)
+library(plm)
+library(lmtest)
+library(broom)
+library(stargazer)
+library(ggbreak)
+```
+
+```{r}
+pols_df_jel_dummy <- read.csv('./data/per_author_net_stats_5yroll_full.csv',
+                              row.names = 1)
+pols_df_jel_dummy['pub_year_factor'] = factor(pols_df_jel_dummy$pub_year)
+```
+
+```{r Network stat plots without controls - comparison of raw averages}
+network_stats_df <- read.csv('./data/network_stats_yearly.csv')
+
+degree_plot <- ggplot(data = network_stats_df, mapping = aes(x = year)) + 
+  geom_line(aes(y = avg_num_coauths_m, col = 'Male'), size = 1.05) +
+  geom_line(aes(y = avg_num_coauths_f, col = 'Female'), size = 1.05) + 
+  geom_line(aes(y = avg_num_coauths_diff, col = 'Difference'), size = 1, linetype = 'twodash') +
+  ylim(c(-0.3, 2.6)) +
+  labs(x = 'Year', y = 'Average degree',
+       title = 'Degree') +
+  scale_x_continuous(breaks = seq(1970, 2020, by = 5),
+                     expand = c(0.03, 0.03)) +
+  scale_color_manual(values = c("Male" = "blue", "Female" = "red", 'Difference' = 'black')) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'bottom',
+        legend.direction = "horizontal",
+        legend.title=element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5))
+
+degree_plot
+
+ggsave('./plots/degree_over_time.png',
+       degree_plot, 
+       width = 6, 
+       height = 4)
+
+clust_plot <- ggplot(data = network_stats_df, mapping = aes(x = year)) + 
+  geom_line(aes(y = avg_clust_m, col = 'Male'), size = 1.05) +
+  geom_line(aes(y = avg_clust_f, col = 'Female'), size = 1.05) + 
+  geom_line(aes(y = avg_clust_diff, col = 'Difference'), size = 1, linetype = 'twodash') +
+  ylim(c(-0.3, 1.3)) + 
+  labs(x = 'Year', y = 'Average clustering coefficient',
+       title = 'Clustering') +
+  scale_x_continuous(breaks = seq(1970, 2020, by = 5),
+                     expand = c(0.03, 0.03)) +
+  scale_color_manual(values = c("Male" = "blue", "Female" = "red", 'Difference' = 'black')) +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'bottom',
+        legend.direction = "horizontal",
+        legend.title=element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5))
+
+clust_plot
+
+ggsave('./plots/clustering_over_time.png',
+       clust_plot, 
+       width = 6, 
+       height = 4)
+
+ties_plot <- ggplot(data = network_stats_df, mapping = aes(x = year)) +
+  geom_line(y = network_stats_df$avg_tie_s_m, col = 'blue', size = 1.05) +
+  geom_line(y = network_stats_df$avg_tie_s_f, col = 'red', size = 1.05) + 
+  geom_line(y = network_stats_df$avg_tie_s_diff, col = 'black', size = 1.05, linetype = 'twodash') +
+  ylim(c(-0.2, 1.02)) + 
+  scale_y_cut(breaks = c(-0.2, 0.1, 0.6, 1.3),
+              which = c(1, 2, 3),
+              scales = c(3, -0.6, 2)) +
+  scale_x_continuous(breaks = seq(1970, 2020, by = 5),
+                      expand = c(0.03, 0.03)) +
+  
+  labs(x = 'Year', y = 'Average strength of ties',
+       title = 'Tie Strength') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = 'bottom',
+        legend.direction = "horizontal",
+        legend.title=element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5))
+
+ties_plot
+
+ggsave('./plots/tiestrength_over_time.png',
+       ties_plot, 
+       width = 6, 
+       height = 4)
+```
+
+```{r - POLS - basic}
+# DEGREE
+degree_mod_plm_basic <- plm(neighbours ~ female + experience_year + 
+                             A + B + C + D + E + F + G + H + I + J + K + L + M + N + O + P + Q + R + Y + Z,
+                           data = pols_df_jel_dummy,
+                           index = 'pub_year',
+                           model = 'within') 
+# Run clustered standard errors
+# cl_vcov_mat <- vcovHC(degree_mod_plm_basic, type = 'HC0', cluster = "group")
+# degree_mod_plm_clust_se <- coeftest(degree_mod_plm_basic, vcov = cl_vcov_mat)
+
+```
+
+```{r Clustering POLS - basic}
+# CLUSTERING
+clust_mod_plm_basic <- plm(clustering ~ female + experience_year + 
+                             A + B + C + D + E + F + G + H + I + J + K + L + M + N + O + P + Q + R + Y + Z,
+                           data = pols_df_jel_dummy,
+                           index = 'pub_year',
+                           model = 'within')
+# cl_vcov_mat <- vcovHC(clust_mod_plm_basic, type = 'HC0', cluster = "group") 
+# clust_mod_plm_clust_se <- coeftest(clust_mod_plm_basic, vcov = cl_vcov_mat)
+```
+
+```{r Tie-strength POLS - basic}
+# TIE STRENGTH
+tie_strength_mod_plm_basic <- plm(tie_strength ~ female + experience_year + 
+                             A + B + C + D + E + F + G + H + I + J + K + L + M + N + O + P + Q + R + Y + Z,
+                           data = pols_df_jel_dummy,
+                           index = 'pub_year',
+                           model = 'within')
+# cl_vcov_mat <- vcovHC(tie_strength_mod_plm_basic, type = 'HC0', cluster = "group") 
+# clust_mod_plm_clust_se <- coeftest(tie_strength_mod_plm_basic, vcov = cl_vcov_mat)
+```
+
+
+```{r Combined table}
+stargazer::stargazer(
+  degree_mod_plm_basic,
+  clust_mod_plm_basic,
+  #align = TRUE,
+  tie_strength_mod_plm_basic,
+  type = 'text',
+  title = "Gender and collaboration network properties",
+  dep.var.caption = "",
+  dep.var.labels = c('Degree', 'Clustering', 'Tie strength'),
+  covariate.labels = 'Female',
+  keep=c("female"), omit.labels=NULL,
+  add.lines=list(c('Year FE', 'Yes','Yes', 'Yes'),
+                 c('Career length FE', 'Yes','Yes', 'Yes'),
+                 c('JEL codes', 'Yes','Yes', 'Yes')),
+  omit.stat=c("rsq", "adj.rsq", "f"),
+  notes = c("Results in columns (1) to (3) are obtained using POLS estimation with the", 
+            "respective network measure as the dependent variable.",
+            "Standard errors clustered at the author level reported in parentheses."),
+  notes.append = TRUE,
+  #notes.align = "l",
+  no.space = TRUE,
+  column.sep.width = "2pt",
+  out = './result_tables/Gender_and_collab_POLS_basic.tex')
+```
+
+```{r - Degree POLS - interactions}
+# full specification POLS
+# DEGREE
+degree_mod_plm_full <- plm(neighbours ~ female + female * pub_year + experience_year + 
+                             A + B + C + D + E + F + G + H + I + J + K + L + M + N + O + P + Q + R + Y + Z,
+                           data = pols_df_jel_dummy,
+                           index = 'pub_year', #index = c('author_id', 'pub_year'), # both FE
+                           model = 'within') 
+# cl_vcov_mat <- vcovHC(degree_mod_plm_full, type = 'HC0', cluster = "group") 
+# degree_mod_plm_clust_se <- coeftest(degree_mod_plm_full, vcov = cl_vcov_mat)
+
+# calculate confidence intervals for all female-year interactions
+all_coefs <- tidy(degree_mod_plm_full)
+conf_ints = confint(degree_mod_plm_full, level = 0.95)
+all_coefs = cbind(all_coefs, conf_ints)
+female_year_coefs <- all_coefs[grep('female', all_coefs$term), ]
+years = seq(1970, 2020)
+female_year_coefs = cbind(female_year_coefs, years)
+
+# Plot
+p_degree <- ggplot(female_year_coefs, aes(years, estimate)) +
+  geom_errorbar(data =female_year_coefs, aes(ymin = `2.5 %`, ymax = `97.5 %`),
+                color = 'darkgreen') +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 2) +
+  ggtitle('Degree differences by gender') +
+  ylim(c(-1.05, 0.60)) +
+  scale_x_continuous(breaks = seq(1970, 2020, by=5),
+                     expand = c(0.03, 0.03)) +
+  labs(title = 'Degree',
+       x = 'Year',
+       y = 'Difference in the gender gap in degree') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5))
+
+ggsave('./plots/POLS_degree.png',
+       p_degree,
+        width = 6, height = 4)
+
+degree_mod_plm_full_sum <- list(degree_mod_plm_full)
+stargazer::stargazer(
+  degree_mod_plm_full_sum, type = "text",
+  keep=c("female"), omit.labels=NULL)
+
+p_degree
+```
+
+```{r Clustering POLS}
+# CLUSTERING
+clust_mod_plm_full <- plm(clustering ~ female + female * pub_year + experience_year + 
+                             A + B + C + D + E + F + G + H + I + J + K + L + M + N + O + P + Q + R + Y + Z,
+                           data = pols_df_jel_dummy,
+                           index = 'pub_year',     #index = c('author_id', 'pub_year'), # both FE
+                           model = 'within')
+
+# calculate confidence intervals for all female-year interactions
+all_coefs_clust <- tidy(clust_mod_plm_full)
+conf_ints_clust = confint(clust_mod_plm_full, level = 0.95)
+all_coefs_clust = cbind(all_coefs_clust, conf_ints_clust)
+female_year_coefs_clust <- all_coefs_clust[grep('female', all_coefs_clust$term), ]
+female_year_coefs_clust = cbind(female_year_coefs_clust, years)
+
+# Plot
+p_clust <- ggplot(female_year_coefs_clust, aes(years, estimate)) +
+  geom_errorbar(data =female_year_coefs_clust, aes(ymin = `2.5 %`, ymax = `97.5 %`),
+                color = 'darkgreen') +
+  geom_point()+
+  geom_hline(yintercept = 0, linetype = 2) +
+  ggtitle('Clustering differences by gender') +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(c(-0.5, 0.5)) +
+  scale_x_continuous(breaks = seq(1970, 2020, by=5),
+                     expand = c(0.03, 0.03)) +
+  labs(title = 'Clustering',
+       x = 'Year',
+       y = 'Difference in the gender gap in clustering') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5))
+
+# save plot
+ggsave('./plots/POLS_clust.png',
+       p_clust,
+        width = 6, height = 4)
+
+stargazer::stargazer(
+  list(clust_mod_plm_full), type = "text",
+  keep=c("female"), omit.labels=NULL)
+
+p_clust
+```
+
+```{r}
+# TIE STRENGTH
+tie_strength_mod_plm_full <- plm(tie_strength ~ female + female * pub_year + experience_year + 
+                             A + B + C + D + E + F + G + H + I + J + K + L + M + N + O + P + Q + R + Y + Z,
+                           data = pols_df_jel_dummy, #index = c('author_id', 'pub_year'), # both FE
+                           index = 'pub_year',
+                           model = 'within')
+tie_strength_mod_plm_full
+
+# calculate confidence intervals for all female-year interactions
+all_coefs_tie_s <- tidy(tie_strength_mod_plm_full)
+conf_ints_tie_s = confint(tie_strength_mod_plm_full, level = 0.95)
+all_coefs_tie_s = cbind(all_coefs_tie_s, conf_ints_tie_s)
+female_year_coefs_tie_s <- all_coefs_tie_s[grep('female', all_coefs_tie_s$term), ]
+female_year_coefs_tie_s = cbind(female_year_coefs_tie_s, years)
+
+# Plot
+p_tie_strength <- ggplot(female_year_coefs_tie_s, aes(years, estimate))+
+  geom_errorbar(data =female_year_coefs_tie_s, aes(ymin = `2.5 %`, ymax = `97.5 %`),
+                color = 'darkgreen') +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 2) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  ylim(c(-0.25, 0.25)) +
+  scale_x_continuous(breaks = seq(1970, 2020, by=5),
+                     expand = c(0.03, 0.03)) +
+  labs(title = 'Tie Strength',
+       x = 'Year',
+       y = 'Difference in the gender gap in strength of ties') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5))
+
+p_tie_strength
+
+ggsave('./plots/POLS_ties.png',
+        width = 6, height = 4,
+       p_tie_strength)
+
+stargazer::stargazer(
+  list(tie_strength_mod_plm_full), type = "text",
+  keep=c("female"), omit.labels=NULL)
+```
+
+
+
+
+
+
+
+
