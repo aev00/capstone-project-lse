@@ -1,0 +1,209 @@
+---
+title: "ERGM"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE}
+library('network')
+library('sna')
+library('ergm')
+library('statnet')
+library('dplyr')
+library('fastDummies')
+library('lubridate')
+```
+
+```{r Load data}
+
+econlit_edges <- read.csv('./data/econlit_edges.csv',
+                          row.names = 1) 
+econlit_edges <- econlit_edges[, c("journal_title",
+                                   "journal_issn",
+                                   "pub_year", 
+                                   "pub_date",
+                                   "author.1",
+                                   "author.2",
+                                   "subject_categories_ls")]
+
+econlit_nodes <- read.csv('./data/econlit_nodes.csv')[, -1]
+
+edge_unique_auth <- unique(c(econlit_edges$author.1, econlit_edges$author.2))
+# remove NaN node
+edge_unique_auth <- edge_unique_auth[edge_unique_auth != ''] 
+
+# asign NA when gender is empty
+econlit_nodes[econlit_nodes$gender_fn_95 == "", 'gender_fn_95'] <- NA
+# create gender dummies
+econlit_nodes <- dummy_columns(econlit_nodes,
+                                select_columns = "gender_fn_95",
+                                ignore_na = TRUE)
+# rename gender dummy columns
+names(econlit_nodes)[names(econlit_nodes) == "gender_fn_95_female"] <- "female"
+names(econlit_nodes)[names(econlit_nodes) == "gender_fn_95_male"] <- "male"
+
+# create author name - gender data frame
+gender_name_pairs <- econlit_nodes[c('author', 'female')]
+name_unique <- unique(econlit_nodes$author)
+head(gender_name_pairs)
+```
+
+
+```{r ERGM on network of 2020}
+# rearrange edge df so that authors are in first two columns
+econlit_edges <- econlit_edges[, c("author.1", "author.2", "pub_year")]  
+# remove loops - data entry mistakes for single author papers - by assigning empty cell to author.2
+econlit_edges[econlit_edges$author.1 == econlit_edges$author.2, "author.2"] <- ''
+# filter edges in year of interest
+start_year = 2020
+econlit_edges_subset <- as.data.frame(econlit_edges[econlit_edges$pub_year >= start_year, ])
+
+# create years of experience variable for all vertices
+econlit_nodes['experience_years'] <-  start_year - year(econlit_nodes$first_pub_date)
+
+# create the network
+net <- network::as.network(econlit_edges_subset,
+                 matrix.type = "edgelist",
+                 directed = FALSE,
+                 multiple = TRUE,
+                 na.rm = TRUE)
+
+net
+
+# Attach vertex attributes
+# female
+net%v%"female" <- econlit_nodes$female
+# experience
+net%v%"experience" <- econlit_nodes$experience_years
+
+# check list of attached attributes
+network::list.vertex.attributes(net)
+
+# Create a missing vertex attribute identifier (NA attribute)
+  # ergm package does not support NA / missing attributes in estimation
+
+# create a dummy that is 1 if gender is NA not identified 
+# use it to make those vertices have attribute na = TRUE
+econlit_nodes['na'] = econlit_nodes$gender_fn_95
+econlit_nodes[is.na(econlit_nodes$na), 'na'] <- TRUE
+econlit_nodes[econlit_nodes$na != TRUE, 'na'] <- FALSE
+
+# attach as 'na' vertex attribute
+net%v%"na" <- econlit_nodes$na
+# check attributes
+network::list.vertex.attributes(net)
+
+# remove 'missing' vertices ie. vertices with non-identified gender
+net <- network::delete.vertices(net, vid = which(net %v% 'na' == TRUE))
+```
+
+
+```{r ERGMs (on small network)}
+# Define functions
+# Estimated probability function:
+estoprob <- function(logit) {
+  exp(logit)/(1+exp(logit))
+}
+# Odds ratio function:
+or <- function(logit) {
+  exp(logit)
+}
+
+# Run basic ERGM(Erdős-Rényi model)
+m1 <- ergm(net ~ edges) 
+summary(m1)
+network.density(net)
+
+# ERGM with female node factor
+m2 <- ergm(net ~ edges + nodefactor('female'))
+# look at results
+summary(m2)
+or(coef(m2))
+estoprob(coef(m2))
+m2_sum <- list(m2)
+m2_or_sum <- list(or(coef(m2)))
+# stargazer::stargazer(
+#   m2_sum, type = "text", column.labels = c("ERGM female node attribute"))
+
+# ERGM with same-gender link
+m3 <- ergm(net ~ edges + nodematch('female'))
+summary(m3)
+estoprob(coef(m3))
+or(coef(m3))
+m3_sum <- list(m3)
+# stargazer::stargazer(
+#   m3_sum, type = "text", column.labels = c("ERGM gender match"))
+# stargazer::stargazer(
+#   m3_sum, type = "text", column.labels = c("ERGM gender match"), apply.coef = exp)
+
+# ERGM with same-gender links allowing for differential effect between groups
+m4 <- ergm(net ~ edges + nodematch('female', diff = TRUE))
+summary(m4)
+estoprob(coef(m4))
+or(coef(m4))
+m4_sum <- list(m4)
+# stargazer::stargazer(
+#   m4_sum, type = "text", column.labels = c("ERGM gender match (different allowed)"))
+# stargazer::stargazer(
+#   m4_sum, type = "text", column.labels = c("ERGM gender match (different allowed)"), apply.coef = exp)
+
+# ERGM with same-gender links allowing for differential effect between groups with experience
+m5 <- ergm(net ~ edges + nodematch('female', diff = TRUE) + nodecov('experience')) 
+summary(m5)
+estoprob(coef(m5))
+or(coef(m5))
+# stargazer::stargazer(
+#   m5, type = "text", column.labels = c("ERGM gender match (different allowed) + experience"))
+# stargazer::stargazer(
+#   m5, type = "text", column.labels = c("ERGM gender match (different allowed) + experience"), apply.coef = exp)
+```
+
+```{r Results table}
+setwd("C:/Users/valyo/Downloads/MASTERS/Capstone - MY498/capstone-2")
+
+stargazer::stargazer(
+  m2, m3, m4, m5,
+  type = "text", 
+  #align = TRUE,
+  dep.var.caption = "ERGMs",
+  dep.var.labels = '',
+  column.labels = c("Gender",
+                    "Matched Gender & Matched Gender & Matched Gender \
+                    \\\\ & &(equal effect restriction)  & (no restriction) &  \\\\ \
+                    & & & & with controls "),
+  omit = c("edges", "experience"),
+  covariate.labels = c('Female', 
+                       'Same gender', 
+                       'Female-female',
+                       'Male-male'),
+  apply.coef = exp,
+  report=('vc*p'),
+  omit.stat = c("aic", "bic"),
+  add.lines=list(c("AIC", 
+                   format(round(as.numeric(AIC(m2)), 1), nsmall=1, big.mark=",") , 
+                   format(round(as.numeric(AIC(m3)), 1), nsmall=1, big.mark=","), 
+                   format(round(as.numeric(AIC(m4)), 1), nsmall=1, big.mark=","),
+                   format(round(as.numeric(AIC(m5)), 1), nsmall=1, big.mark=",")),
+                 c('Controls', 'No', 'No', 'No', 'Yes')),
+  notes.align = "c",
+  column.sep.width = "5pt",
+  single.row = TRUE,
+  out = './result_tables/ERGM.tex') 
+```
+
+```{r Present basic ERGM specification's odds ratio}
+
+cat('The odds ratio for the basic Erdős-Rényi type ERGM is', or(coef(m1)), '\n')
+
+stargazer::stargazer(
+  list(m1), type = "text", column.labels = c("ERGM Erdős-Rényi"), apply.coef = exp)
+summary(m1)
+
+
+```
+
+
+
