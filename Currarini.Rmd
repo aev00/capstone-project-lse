@@ -87,7 +87,6 @@ per_author_stats['pub_year_factor'] = factor(per_author_stats$pub_year)
 
 
 # gender differences in number of ties
-
 number_of_ties_plm <- plm(degree ~ female + female * pub_year + experience_year + 
                              A + B + C + D + E + F + G + H + I + J + K + L + M + N + O + P + Q + R + Y + Z,
                            data = per_author_stats,
