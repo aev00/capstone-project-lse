@@ -16,6 +16,8 @@ library(plm)
 library(lmtest)
 library(broom)
 library(stargazer)
+library(plm)
+library(broom)
 ```
 
 
@@ -75,6 +77,71 @@ ggsave('./plots/Currarini_tie_diff.png',
 
 ```
 
+
+```{r Gap significance}
+# read in per-author data
+per_author_stats <- read.csv('./data/per_author_net_stats_5yroll_full.csv',
+                              row.names = 1)
+per_author_stats['pub_year_factor'] = factor(per_author_stats$pub_year)
+
+
+# gender differences in number of ties
+
+number_of_ties_plm <- plm(degree ~ female + female * pub_year + experience_year + 
+                             A + B + C + D + E + F + G + H + I + J + K + L + M + N + O + P + Q + R + Y + Z,
+                           data = per_author_stats,
+                           index = 'pub_year', #index = c('author_id', 'pub_year'), # both FE
+                           model = 'within') 
+
+# calculate confidence intervals for all female-year interactions
+all_coefs <- tidy(number_of_ties_plm)
+conf_ints = confint(number_of_ties_plm, level = 0.95)
+all_coefs = cbind(all_coefs, conf_ints)
+female_year_coefs <- all_coefs[grep('female', all_coefs$term), ]
+years = seq(1970, 2020)
+female_year_coefs = cbind(female_year_coefs, years)
+
+# Plot
+p_ties <- ggplot(female_year_coefs, aes(years, estimate)) +
+  geom_errorbar(data =female_year_coefs, aes(ymin = `2.5 %`, ymax = `97.5 %`),
+                color = 'chartreuse3') +
+  geom_point() +
+  geom_hline(yintercept = 0, linetype = 2) +
+  #ggtitle('Number of collaborative ties - gender difference') +
+  ylim(c(-1.9, 1.1)) +
+  scale_x_continuous(breaks = seq(1970, 2020, by=5),
+                     expand = c(0.03, 0.03)) +
+  labs(title = 'Gender difference in average number of ties over time',
+       x = 'Year',
+       y = 'Difference in the gender gap in number of ties') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank(),
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5))
+
+ggsave('./plots/Currarini_gender_diff_confints.png',
+       p_ties,
+       width = 6, height = 4)
+
+p_ties
+
+# Create LaTeX table with coefficients
+stargazer::stargazer(
+  list(number_of_ties_plm), type = "text",
+  keep=c("female"), omit.labels=NULL, out = 'Currarini_gender_diff_in_num_ties.tex')
+
+stargazer::stargazer(
+  list(number_of_ties_plm), type = "text",
+  dep.var.caption = "Pooled OLS",
+  dep.var.labels = 'Number of ties',
+  keep=c("female"),
+  omit.stat = c("rsq"),
+  notes.align = "l",
+  single.row = TRUE,
+  out = './result_tables/Currarini_gender_diff_in_num_ties.tex')
+
+```
 
 
 
