@@ -29,7 +29,7 @@ econlit_edges <- econlit_edges[, c("journal_title",
                                    "author.2",
                                    "subject_categories_ls")]
 
-econlit_nodes <- read.csv('./data/econlit_nodes.csv')[, -1]
+econlit_nodes <- read.csv('./data/econlit_author_article_attributes.csv')[, -1]
 
 edge_unique_auth <- unique(c(econlit_edges$author.1, econlit_edges$author.2))
 # remove NaN node
@@ -151,7 +151,7 @@ m4_sum <- list(m4)
 #   m4_sum, type = "text", column.labels = c("ERGM gender match (different allowed)"), apply.coef = exp)
 
 # ERGM with same-gender links allowing for differential effect between groups with experience
-m5 <- ergm(net ~ edges + nodematch('female', diff = TRUE) + nodecov('experience')) 
+m5 <- ergm(net ~ edges + nodematch('female', diff = TRUE) + nodefactor('experience')) 
 summary(m5)
 estoprob(coef(m5))
 or(coef(m5))
@@ -162,8 +162,6 @@ or(coef(m5))
 ```
 
 ```{r Results table}
-setwd("C:/Users/valyo/Downloads/MASTERS/Capstone - MY498/capstone-2")
-
 stargazer::stargazer(
   m2, m3, m4, m5,
   type = "text", 
@@ -200,7 +198,7 @@ cat('The odds ratio for the basic Erdős-Rényi type ERGM is', or(coef(m1)), '\n
 
 stargazer::stargazer(
   list(m1), type = "text", column.labels = c("ERGM Erdős-Rényi"), apply.coef = exp)
-summary(m1)
+summary(m1) 
 
 
 ```
