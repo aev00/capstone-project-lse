@@ -92,7 +92,7 @@ econlit_nodes[is.na(econlit_nodes$na), 'na'] <- TRUE
 econlit_nodes[econlit_nodes$na != TRUE, 'na'] <- FALSE
 
 # attach as 'na' vertex attribute
-net%v%"na" <- econlit_nodes$na
+net%v%"na" <- econlit_nodes$na 
 # check attributes
 network::list.vertex.attributes(net)
 
