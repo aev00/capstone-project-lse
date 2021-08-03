@@ -126,10 +126,7 @@ ggsave('./plots/Currarini_gender_diff_confints.png',
 
 p_ties
 
-# Create LaTeX table with coefficients
-stargazer::stargazer(
-  list(number_of_ties_plm), type = "text",
-  keep=c("female"), omit.labels=NULL, out = 'Currarini_gender_diff_in_num_ties.tex')
+# Create LaTeX table with coefficients, edit in LaTeX
 
 stargazer::stargazer(
   list(number_of_ties_plm), type = "text",
