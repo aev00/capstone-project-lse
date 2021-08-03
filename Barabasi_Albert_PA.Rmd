@@ -1,0 +1,149 @@
+---
+title: "Barabási-Albert model"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(igraph)
+library(poweRlaw)
+```
+
+```{r}
+data <- read.csv('./data/econlit_edges_simple.csv')
+```
+
+```{r}
+# get true edges where 2nd author exists
+edges_true = data[data$author.2 != '', c('author.1', 'author.2')]
+# get vertices
+verts = unique(c(data$author.1, data$author.2)) #616744
+# remove empty string (erroneous author id introduced by missing data) from vertices
+verts = verts[!verts == '']
+
+# create network
+net <- graph.data.frame(edges_true, 
+                          vertices = verts, 
+                          directed = FALSE)
+net
+# V=616743, E=1309211
+```
+
+```{r}
+# Get the degrees and the degree distributions
+degr <- igraph::degree(net)
+summary(degr)
+degr_prob <- degree.distribution(net)
+
+# Remove isolated authors (degree = 0)
+degr_prob <- degr_prob[-1]
+# Remove degrees with proportion = 0 for clearer plotting.
+non_zero_degr_inds <- which(degr_prob!=0) 
+degr_prob <- degr_prob[non_zero_degr_inds]
+degrees <- 1:max(degr)
+degrees <- degrees[non_zero_degr_inds]
+
+# Plot probability on y axis and degree on x axis
+plot(degr_prob ~ degrees, xlab='Degree d', ylab='Probability P(X=d)', col='blue')
+  # Flat tail visible.  
+
+# Plot on log-log scale to see if a straight line could fit, and hence suggest a power law.
+## Complementary cumulative distribution function
+deg_ccdf <- NULL
+for (i in 1:length(degr_prob)) {
+  deg_ccdf[i] = sum( degr_prob[ seq(i, length(degr_prob)) ] )
+}
+
+# fit a  straight line to the tail -- excluding the first 10 degrees
+reg <- lm( log(tail(deg_ccdf,-10) ) ~ log(tail(degrees,-10)) )
+coeff <- coef(reg)
+
+# Plot (ccdf on y axis and degree on x axis)
+plot(deg_ccdf ~ degrees, xlab='Degree d', ylab='Complementary CDF P(X>=d)', log='xy', col='blue')
+# use coefficients to plot straight line
+power_law_fit <- function(x) exp( coeff[[1]] + coeff[[2]]*log(x) )
+curve(power_law_fit, col = "red", add = TRUE)
+```
+
+The high skew (assymmetry) in degree distribution seems true for my data.
+Test for preferential attachment as network formation process.
+Consider assymptotic power law and other heavy-tailed distributions.
+
+```{r Fitting heavy-tailed distributions}
+# See network properties
+net
+
+# Create non-zero degree input to power law object
+degr_non_zero <- igraph::degree(net)
+degr_non_zero <- degr_non_zero[degr_non_zero != 0] # 506670 non-isolate vertices
+
+# explore whether different distributions would fit the empirical network better
+# POWER LAW
+m_pl <- displ$new(degr_non_zero)
+m_pl$xmin <- estimate_xmin(m_pl)
+m_pl$pars <- estimate_pars(m_pl)
+
+# POISSON
+m_pois <- dispois$new(degr_non_zero)
+m_pois$xmin <- estimate_xmin(m_pois)
+m_pois$pars <- estimate_pars(m_pois)
+
+# EXPONENTIAL
+m_exp <- disexp$new(degr_non_zero)
+m_exp$xmin <- estimate_xmin(m_exp)
+m_exp$pars <- estimate_pars(m_exp)
+
+# DISCRETE LOG-NORMAL
+m_ln <- dislnorm$new(degr_non_zero)
+m_ln$xmin <- estimate_xmin(m_ln)
+m_ln$pars <- estimate_pars(m_ln)
+
+# Plot 
+png('./plots/CDF.png',
+    width = 600,
+    height = 450)
+plot(m_pl,
+     xlab = 'Degree',
+     ylab = 'Cummulative Degree Distribution',
+     xaxt = "n")
+lines(m_pl, col = "coral4", lwd = 2)
+lines(m_ln, col = "chartreuse3", lwd = 2)
+lines(m_pois, col = "darkgoldenrod1", lwd = 2)
+lines(m_exp, col = "darkblue", lwd = 2)
+grid()
+legend('topright',
+       legend = c('Power-law', 'Log-normal', 'Poisson', 'Exponential'), 
+       lwd = 3,
+       col = c('coral4', 'chartreuse3', 'darkgoldenrod1', 'darkblue'),
+       bg = c('cornsilk1'))
+axis(side = 1, at = c(1, 10,100,1000))
+axis(side = 2, at = c(1, 0.1, 0.01, 0.001, 0.0001, 0.00001))
+
+dev.off()
+```
+
+```{r Power law - KS-distance}
+# Fit distributions to data
+
+# Power law
+m_pl <- displ$new(degr_non_zero)
+# estimate x_min and the exponent alpha
+est_pl <- estimate_pars(m_pl)
+xmin_pl <- estimate_xmin(m_pl)
+# assign parameters
+m_pl$pars <- est_pl
+m_pl$xmin <- xmin_pl
+# display KS (Kolomogorov-Smirnoff) stat
+# (gives information about how well power law distribution first the data 
+# but not about how likely it is to have been drawn from power law)
+get_distance_statistic(m_pl)
+# get p value for power law fit
+bs <- bootstrap_p(m_pl,
+                  no_of_sims = 100,
+                  threads = 10)
+bs$p # 0.91 - high P-value, cannot reject the null that PA influences network formation
+```
+
+
+
+
