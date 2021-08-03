@@ -198,9 +198,7 @@ cat('The odds ratio for the basic Erdős-Rényi type ERGM is', or(coef(m1)), '\n
 
 stargazer::stargazer(
   list(m1), type = "text", column.labels = c("ERGM Erdős-Rényi"), apply.coef = exp)
-summary(m1) 
-
-
+summary(m1)
 ```
 
 
