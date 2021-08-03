@@ -18,6 +18,7 @@ library(broom)
 library(stargazer)
 library(plm)
 library(broom)
+library(fastDummies)
 ```
 
 
@@ -139,11 +140,4 @@ stargazer::stargazer(
   out = './result_tables/Currarini_gender_diff_in_num_ties.tex')
 
 ```
-
-
-
-
-
-
-
 
