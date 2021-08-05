@@ -522,7 +522,8 @@ levels(sole_auth_papers$author_1_gender_fact) # female, male, NA order
 sole_auths_papers_counts <- table(sole_auth_papers$author_1_gender_fact)
 
 # 1A) sole authored papers by gender / all sole authored papers
-sole_auths_papers_fracs <- prop.table(table(sole_auth_papers$author_1_gender_fact))*100
+sole_auths_papers_fracs <- as.data.frame(prop.table(table(sole_auth_papers$author_1_gender_fact))*100)
+colnames(sole_auths_papers_fracs) <- c('Gender', "Solo authored papers' population share")
 
 # 1B) sole authored papers by gender / all papers by gender 
 # i.e. share of sole-authored papers for each gender out of the papers published by that gender
@@ -531,7 +532,8 @@ all_coauthors_genders_coll = as.factor(c(edges_coauth$author_1_gender,
 num_pub_papers_per_gender = table(all_coauthors_genders_coll)
 
 # how many papers did genders publish / contribute to how many publications overall
-sole_auths_papers_per_gender_fracs = sole_auths_papers_counts / num_pub_papers_per_gender * 100
+sole_auths_papers_per_gender_fracs = as.data.frame(sole_auths_papers_counts / num_pub_papers_per_gender * 100)
+colnames(sole_auths_papers_per_gender_fracs) <- c('Gender', "Solo authored papers' share within gender group")
 
 # Print tables
 print(sole_auths_papers_fracs)
@@ -577,12 +579,15 @@ levels(n_occur_only_1$author_gender_fact)
 # Create tables
 
 # 2A) only 1x appearing authors by gender / all only 1x appearing authors
-n_occur_only_1_fracs <- prop.table(table(n_occur_only_1$author_gender_fact))*100
+n_occur_only_1_fracs <- as.data.frame(prop.table(table(n_occur_only_1$author_gender_fact))*100)
+colnames(n_occur_only_1_fracs) <- c('Gender', "Single published authors' population share")
 
 # 2B) only 1x appearing authors by gender / all authors by gender
 num_authors_per_gender = table(addNA(as.factor(c(nodes_df$gender)))) # OK
 n_occur_only_1_count = table(addNA(as.factor(c(n_occur_only_1$author_gender)))) # OK
-n_occur_only_1_per_gender_fracs = n_occur_only_1_count / num_authors_per_gender * 100
+n_occur_only_1_per_gender_fracs = as.data.frame(n_occur_only_1_count / num_authors_per_gender * 100)
+colnames(n_occur_only_1_per_gender_fracs) <- c('Gender', "Single published authors' share within gender group")
+
 
 # Present tables
 print(n_occur_only_1_fracs)
