@@ -4,6 +4,6 @@
 
 Data (cleaned and preprocessed) is available to download at: https://www.dropbox.com/sh/ezs6b1y738t9a24/AABOwa495bXmTVxW7XNPYTlDa?dl=0.
 
-To replicate the analysis and reproduce tables and figures, please download and unzip the data to a folder named 'data' in your working directory. Ensure the presence of two further folders, 'plots' and 'result_tables', to store results.
+To replicate the analysis and reproduce tables and figures please download and unzip the data to a folder named 'data' in your working directory. Ensure the presence of two further folders, 'plots' and 'result_tables', to store results.
 
 A note on technical requirements: all analysis was conducted in R Studio version 1.4.1717.
