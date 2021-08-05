@@ -450,7 +450,7 @@ ih_plot <- ggplot(data = ih_df, mapping = aes(x = year)) +
   geom_hline(yintercept = 0, col = "black") +
   ylim(c(-0.02, 0.55)) + 
   xlim(c(1965, 2025)) +
-  labs(#title = 'Inbreeding Homophily',
+  labs(title = 'Inbreeding Homophily',
        x = 'Year', 
        y = 'Inbreeding homophily index',
        color = 'Legend') +
@@ -485,7 +485,7 @@ assort_plot <- ggplot(data = network_stat_df, mapping = aes(x = year)) +
   geom_hline(yintercept = 0, col = "black") +
   ylim(c(0, 0.5)) + 
   xlim(c(1965, 2025)) +
-  labs(#title = 'Assortativity',
+  labs(title = 'Assortativity',
        x = 'Year', 
        y = 'Assortativity coefficient') +
   scale_x_continuous(breaks = seq(1970, 2020, by = 5),
