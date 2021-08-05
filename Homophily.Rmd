@@ -12,7 +12,6 @@ library('fastDummies')
 library('igraph')
 library('network')
 library('sna')
-library('ergm')
 library('statnet')
 library('intergraph')
 library('dplyr')
@@ -464,8 +463,7 @@ ih_plot <- ggplot(data = ih_df, mapping = aes(x = year)) +
         legend.title=element_blank(),
         panel.grid.minor = element_blank(),
         panel.grid.major.y = element_blank(),
-        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5),
-        plot.caption = element_text(hjust = 0))
+        axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5))
 
 ih_plot
 
@@ -494,13 +492,13 @@ assort_plot <- ggplot(data = network_stat_df, mapping = aes(x = year)) +
   theme(panel.grid.minor = element_blank(),
         panel.grid.major.y = element_blank(),
         axis.text.y = element_text(angle = 90, vjust = 1, hjust=0.5),
-        plot.caption = element_text(hjust = 0))
+        plot.title = element_text(hjust = 0.5))
 
 assort_plot
 
 ggsave("./plots/assortativity.png",
        assort_plot,
-       width = 6, height = 4)
+       width = 6, height = 4) 
 
 ```
 
