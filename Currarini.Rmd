@@ -36,7 +36,7 @@ group_share_plot <- ggplot(data = network_stats_df, mapping = aes(x = year)) +
        title = 'Population gender composition') +
   scale_x_continuous(breaks = seq(1970, 2020, by = 5),
                      expand = c(0, 0)) +
-  scale_color_manual(values = c("Male" = "darkblue", "Female" = "darkred", 'Difference' = 'black')) +
+  scale_color_manual(values = c("Male" = "darkblue", "Female" = "darkred")) +
   theme_bw() +
   theme(plot.title = element_text(hjust = 0.5),
         legend.position = 'bottom',
@@ -60,7 +60,7 @@ num_ties_plot <- ggplot(data = network_stats_df, mapping = aes(x = year)) +
        title = 'Collaborative ties') +
   scale_x_continuous(breaks = seq(1970, 2020, by = 5),
                      expand = c(0, 0)) +
-  scale_color_manual(values = c("Male" = "darkblue", "Female" = "darkred", 'Difference' = 'black')) +
+  scale_color_manual(values = c("Male" = "darkblue", "Female" = "darkred")) +
   theme_bw() +
   theme(plot.title = element_text(hjust = 0.5),
         legend.position = 'bottom',
