@@ -103,8 +103,9 @@ png('./plots/CDF.png',
     width = 600,
     height = 450)
 plot(m_pl,
+     main = 'CDF fits',
      xlab = 'Degree',
-     ylab = 'Cummulative Degree Distribution',
+     ylab = 'Cumulative Degree Distribution',
      xaxt = "n")
 lines(m_pl, col = "coral4", lwd = 2)
 lines(m_ln, col = "chartreuse3", lwd = 2)
